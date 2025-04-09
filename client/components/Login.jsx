@@ -1,19 +1,26 @@
 
+import {useState,useEffect} from 'react'
 
+
+const [form,setForm]=useState({username:'',password:''})
+
+const changeForm=(()=>{
+    
+})
 
 const Login=()=>{
 
-return(
-    <div>
+    return(
         <form >
-            <label htmlFor="name" />
-            
-            <input type="text" />
+            <input type="text" 
+            placeholder="username"
+            value={form.username}
+            onChange={changeForm}
+            />
+
+
         </form>
-
-
-    </div>
-)
+    )
 
 }
 
