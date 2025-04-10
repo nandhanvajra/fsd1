@@ -12,6 +12,10 @@ const Home = () => {
     const token = localStorage.getItem('token');
 
     useEffect(() => {
+        fetchTasks();
+    }, []);
+
+    const fetchTasks = () => {
         fetch('http://localhost:3000/', {
             method: 'GET',
             headers: {
@@ -34,7 +38,7 @@ const Home = () => {
             console.log(err);
             navigate('/login');
         });
-    }, []);
+    };
 
     const updateTask = (index) => {
         setEditTask(true);
@@ -59,11 +63,8 @@ const Home = () => {
             }
         })
         .then(res => res.json())
-        .then((res) => {
-            console.log(res);
-            const temp = [...tasks];
-            temp[Index] = { ...temp[Index], ...currtask };
-            setTasks(temp);
+        .then(() => {
+            fetchTasks(); // Refresh tasks list
             setEditTask(false);
         });
     };
@@ -77,10 +78,8 @@ const Home = () => {
             }
         })
         .then(res => res.json())
-        .then((res) => {
-            console.log(res);
-            const updatedTasks = tasks.filter((_, i) => i !== index);
-            setTasks(updatedTasks);
+        .then(() => {
+            fetchTasks(); // Refresh tasks list
         })
         .catch((err) => {
             console.log(err);
@@ -108,16 +107,8 @@ const Home = () => {
             }
         })
         .then(res => res.json())
-        .then((res) => {
-            console.log(res);
-            const newTask = {
-                ...currtask,
-                _id: res.task?._id, 
-                assignedTo: { name: user.name }
-            };
-            const temp = [...tasks];
-            temp.push(newTask);
-            setTasks(temp);
+        .then(() => {
+            fetchTasks(); // Refresh tasks list
             setEditTask(false);
         });
     };
@@ -136,7 +127,6 @@ const Home = () => {
                             <th>Task Title</th>
                             <th>Task description</th>
                             <th>Task status</th>
-                            
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -147,7 +137,6 @@ const Home = () => {
                                 <td>{task.title}</td>
                                 <td>{task.description}</td>
                                 <td>{task.status}</td>
-                                
                                 <td>
                                     <button onClick={() => updateTask(index)}>update</button>
                                     <button onClick={() => deleteTask(index)}>delete</button>
@@ -160,9 +149,9 @@ const Home = () => {
                 {editTask && (
                     <form onSubmit={Index === -1 ? postTask : putTask}>
                         <label htmlFor="title">Title:</label>
-                        <input type="text" name="title" placeholder="title" value={currtask.title} onChange={changeVal} />
+                        <input type="text" name="title" value={currtask.title} onChange={changeVal} required />
                         <label htmlFor="description">Description:</label>
-                        <input type="text" name="description" placeholder="description" value={currtask.description} onChange={changeVal} />
+                        <input type="text" name="description" value={currtask.description} onChange={changeVal} required />
                         <label htmlFor="status">Status:</label>
                         <select name="status" value={currtask.status} onChange={changeVal}>
                             <option value="pending">Pending</option>

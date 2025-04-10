@@ -9,97 +9,74 @@ const cors = require('cors');
 const PORT = 3000;
 const secret = 'secretkey';
 
-mongoose.connect('mongodb://localhost:27017/todo-app').then(() => {
-    console.log("connected to db");
-});
+mongoose.connect('mongodb://localhost:27017/todo-app')
+    .then(() => console.log("connected to db"))
+    .catch(err => console.error(err));
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 
 app.use(cors({
-    origin: 'http://localhost:5001',
+    origin: 'http://localhost:5002',
     credentials: true
 }));
 
 const authenticate = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const auth = authHeader && authHeader.split(' ')[1];
+    const token = authHeader && authHeader.split(' ')[1];
 
-    if (auth) {
-        jwt.verify(auth, secret, (err, user) => {
-            if (err) {
-                return res.status(401).send({ message: "wrong token" });
-            }
+    if (token) {
+        jwt.verify(token, secret, (err, user) => {
+            if (err) return res.status(401).send({ message: "invalid token" });
             req.user = user;
             next();
         });
     } else {
-        res.status(401).send({ message: "no token" });
+        res.status(401).send({ message: "no token provided" });
     }
 };
 
 app.get('/', authenticate, async (req, res) => {
-    const tasks = await Task.find({ assignedTo: req.user.id }).populate('assignedTo');
-    res.status(200).send({ message: "this is home page", user: req.user, tasks });
-});
-
-app.get('/:id', authenticate, async (req, res) => {
     try {
-        const task = await Task.findById(req.params.id).populate('assignedTo');
-        if (task) {
-            res.status(200).send({ message: "task fetched", task });
-        } else {
-            res.status(404).send({ message: "task not fetched" });
-        }
+        const tasks = await Task.find({ assignedTo: req.user.id }).populate('assignedTo');
+        res.status(200).send({ user: req.user, tasks });
     } catch (err) {
-        res.status(500).send({ message: "internal server error" });
+        res.status(500).send({ message: "internal error" });
     }
 });
 
 app.post('/', authenticate, async (req, res) => {
-    const { title, description, status, dueDate } = req.body;
-    const assignedTo = req.user.id; // ✅ Default to logged-in user
-
     try {
-        const task = await Task.create({ title, description, status, dueDate, assignedTo });
-        res.status(201).send({ message: "task created" });
+        const { title, description, status, dueDate } = req.body;
+        const task = await Task.create({ title, description, status, dueDate, assignedTo: req.user.id });
+        res.status(201).send({ message: "task created", task });
     } catch (err) {
-        res.status(401).send({ message: "error occurred" });
+        res.status(400).send({ message: "creation failed", error: err.message });
     }
 });
 
 app.put('/:id', authenticate, async (req, res) => {
-    const { title, description, status, dueDate } = req.body;
-    const assignedTo = req.user.id; // ✅ Default to logged-in user on update too
-
     try {
         const task = await Task.findByIdAndUpdate(
             req.params.id,
-            { title, description, status, dueDate, assignedTo },
+            { ...req.body, assignedTo: req.user.id },
             { new: true, runValidators: true }
         );
-
-        if (!task) {
-            res.status(404).send({ message: "task is not present" });
-        } else {
-            res.status(201).send({ message: "task updated" });
-        }
+        if (!task) return res.status(404).send({ message: "task not found" });
+        res.status(200).send({ message: "task updated", task });
     } catch (err) {
-        res.status(401).send({ message: "error occurred" });
+        res.status(400).send({ message: "update failed", error: err.message });
     }
 });
 
 app.delete('/:id', authenticate, async (req, res) => {
     try {
         const task = await Task.findByIdAndDelete(req.params.id);
-        if (!task) {
-            res.status(404).send({ message: "task is not present" });
-        } else {
-            res.status(201).send({ message: "task deleted" });
-        }
+        if (!task) return res.status(404).send({ message: "task not found" });
+        res.status(200).send({ message: "task deleted" });
     } catch (err) {
-        res.status(401).send({ message: "error occurred" });
+        res.status(400).send({ message: "deletion failed", error: err.message });
     }
 });
 
@@ -108,33 +85,28 @@ app.post('/login', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-        res.status(409).send({ message: "no user exists" });
+        return res.status(409).send({ message: "no user exists" });
     } else if (password !== user.password) {
-        res.status(409).send({ message: "wrong pass" });
-    } else {
-        const token = jwt.sign({ id: user._id, email: user.email }, secret, { expiresIn: '1hr' });
-        res.status(201).send({ message: "authenticated correctly", token, user: { id: user._id, name: user.name, email: user.email } });
+        return res.status(409).send({ message: "wrong password" });
     }
+
+    const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, secret, { expiresIn: '1h' });
+    res.status(200).send({ token, user: { id: user._id, name: user.name, email: user.email } });
 });
 
 app.post('/signup', async (req, res) => {
     const { name, email, password } = req.body;
+    const existing = await User.findOne({ email });
 
-    try {
-        const user = await User.findOne({ email });
-        if (user) {
-            return res.status(409).send({ message: 'This user already exists' });
-        }
-
-        const newUser = await User.create({ name, email, password });
-        const token = jwt.sign({ id: newUser._id, email: newUser.email }, secret, { expiresIn: '1hr' });
-
-        res.status(201).send({ message: 'new user created successfully', token, user: { id: newUser._id, name: newUser.name, email: newUser.email } });
-    } catch (err) {
-        res.status(500).send({ message: err });
+    if (existing) {
+        return res.status(409).send({ message: "user already exists" });
     }
+
+    const newUser = await User.create({ name, email, password });
+    const token = jwt.sign({ id: newUser._id, email: newUser.email, name: newUser.name }, secret, { expiresIn: '1h' });
+    res.status(201).send({ token, user: { id: newUser._id, name: newUser.name, email: newUser.email } });
 });
 
 app.listen(PORT, () => {
-    console.log("This is connected to port 3000");
+    console.log(`Server is running on port ${PORT}`);
 });
